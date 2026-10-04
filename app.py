@@ -45,7 +45,7 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         be = float(bess_energy)
         init_s = float(initial_soc)
 
-        # Clean variable generation (Continuous is default, Binary specified safely)
+        # 100% Robust variable generation across all PuLP versions
         P_charge = {}
         P_discharge = {}
         R_afrr = {}
@@ -54,10 +54,10 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         u_discharge = {}
 
         for t in T:
-            P_charge[t] = pulp.LpVariable(f"P_charge_{t}", 0.0, bp)
-            P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}", 0.0, bp)
-            R_afrr[t] = pulp.LpVariable(f"R_afrr_{t}", 0.0, bp)
-            SOC[t] = pulp.LpVariable(f"SOC_{t}", 0.5, be)
+            P_charge[t] = pulp.LpVariable(f"P_charge_{t}")
+            P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}")
+            R_afrr[t] = pulp.LpVariable(f"R_afrr_{t}")
+            SOC[t] = pulp.LpVariable(f"SOC_{t}")
             u_charge[t] = pulp.LpVariable(f"u_charge_{t}", cat='Binary')
             u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}", cat='Binary')
 
@@ -69,6 +69,16 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         model += SOC[0] == init_s
 
         for t in T:
+            # Explicit bounds and constraints
+            model += P_charge[t] >= 0.0
+            model += P_charge[t] <= bp
+            model += P_discharge[t] >= 0.0
+            model += P_discharge[t] <= bp
+            model += R_afrr[t] >= 0.0
+            model += R_afrr[t] <= bp
+            model += SOC[t] >= 0.5
+            model += SOC[t] <= be
+
             model += u_charge[t] + u_discharge[t] <= 1
             model += P_charge[t] <= bp * u_charge[t]
             model += P_discharge[t] <= bp * u_discharge[t]
