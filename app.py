@@ -11,9 +11,8 @@ st.set_page_config(
 )
 
 st.title("🔋 Multi-Market Revenue Stacking Engine (Day-Ahead & aFRR)")
-st.markdown("Advanced MILP optimization dashboard for co-optimized battery energy storage dispatch across energy and reserve markets.")
+st.markdown("Advanced LP optimization dashboard for co-optimized battery energy storage dispatch across energy and reserve markets.")
 
-# Safely import pulp with clear error handling
 try:
     import pulp
 except ImportError:
@@ -28,7 +27,7 @@ initial_soc = st.sidebar.slider("Initial SOC (MWh)", 0.5, bess_energy, 3.0, 0.5)
 eta = st.sidebar.slider("Round-Trip Efficiency", 0.85, 0.98, 0.95, 0.01)
 
 if st.sidebar.button("Run Multi-Market Optimization"):
-    with st.spinner("Solving MILP co-optimization model for Day-Ahead and aFRR markets..."):
+    with st.spinner("Solving LP co-optimization model for Day-Ahead and aFRR markets..."):
         T = list(range(24))
         
         np.random.seed(42)
@@ -44,74 +43,48 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         bp = float(bess_power)
         be = float(bess_energy)
         init_s = float(initial_soc)
+        eta_f = float(eta)
 
-        # 1. Safest Variable Generation (bypassing all constructor limits, setting attributes directly)
-        P_charge, P_discharge, R_afrr, SOC, u_charge, u_discharge = {}, {}, {}, {}, {}, {}
+        # 1. Safest Variable Generation (Only defining names, NO attribute setting)
+        P_charge, P_discharge, R_afrr, SOC = {}, {}, {}, {}
 
         for t in T:
             P_charge[t] = pulp.LpVariable(f"P_charge_{t}")
-            P_charge[t].lowBound, P_charge[t].upBound = 0.0, bp
-            
             P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}")
-            P_discharge[t].lowBound, P_discharge[t].upBound = 0.0, bp
-            
             R_afrr[t] = pulp.LpVariable(f"R_afrr_{t}")
-            R_afrr[t].lowBound, R_afrr[t].upBound = 0.0, bp
-            
             SOC[t] = pulp.LpVariable(f"SOC_{t}")
-            SOC[t].lowBound, SOC[t].upBound = 0.5, be
-            
-            u_charge[t] = pulp.LpVariable(f"u_charge_{t}")
-            u_charge[t].cat = pulp.LpBinary
-            u_charge[t].lowBound, u_charge[t].upBound = 0.0, 1.0
-            
-            u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}")
-            u_discharge[t].cat = pulp.LpBinary
-            u_discharge[t].lowBound, u_discharge[t].upBound = 0.0, 1.0
 
-        # 2. Objective Function via Low-Level API (Bypassing __add__, __mul__, __sub__)
+        # 2. Objective Function via Low-Level API Dictionary (Zero operator overloading)
         obj_dict = {}
         for t in T:
-            # P_discharge * da_price - P_charge * da_price + R_afrr * afrr_price - 1.2 * (P_charge + P_discharge + R_afrr)
+            # Objective: Maximize (P_discharge - P_charge) * da_price + R_afrr * afrr_price - 1.2 * (P_charge + P_discharge + R_afrr)
             obj_dict[P_discharge[t]] = float(da_prices[t]) - 1.2
             obj_dict[P_charge[t]] = -float(da_prices[t]) - 1.2
             obj_dict[R_afrr[t]] = float(afrr_prices[t]) - 1.2
             
         constant_term = sum(float(solar_profile[t]) * float(da_prices[t]) for t in T)
-        
-        # Build affine expression directly from dictionary mapping
-        model += pulp.LpAffineExpression(obj_dict, constant=constant_term)
+        model.objective = pulp.LpAffineExpression(obj_dict, constant=constant_term)
 
-        # 3. Constraints via Low-Level API (Bypassing <=, >=, == operators)
-        # sense=0 is EQ (==), sense=-1 is LE (<=)
+        # 3. Constraints via Low-Level API (sense: 1 is >=, -1 is <=, 0 is ==)
         model += pulp.LpConstraint(pulp.LpAffineExpression({SOC[0]: 1.0}), sense=0, rhs=init_s)
 
         for t in T:
-            # P_charge[t] - bp * u_charge[t] <= 0
-            model += pulp.LpConstraint(
-                pulp.LpAffineExpression({P_charge[t]: 1.0, u_charge[t]: -bp}), 
-                sense=-1, rhs=0.0
-            )
-            # P_discharge[t] - bp * u_discharge[t] <= 0
-            model += pulp.LpConstraint(
-                pulp.LpAffineExpression({P_discharge[t]: 1.0, u_discharge[t]: -bp}), 
-                sense=-1, rhs=0.0
-            )
-            # P_charge[t] + R_afrr[t] <= bp
-            model += pulp.LpConstraint(
-                pulp.LpAffineExpression({P_charge[t]: 1.0, R_afrr[t]: 1.0}), 
-                sense=-1, rhs=bp
-            )
-            # P_discharge[t] + R_afrr[t] <= bp
-            model += pulp.LpConstraint(
-                pulp.LpAffineExpression({P_discharge[t]: 1.0, R_afrr[t]: 1.0}), 
-                sense=-1, rhs=bp
-            )
-            # u_charge[t] + u_discharge[t] <= 1
-            model += pulp.LpConstraint(
-                pulp.LpAffineExpression({u_charge[t]: 1.0, u_discharge[t]: 1.0}), 
-                sense=-1, rhs=1.0
-            )
+            # Bounds enforced purely through constraints
+            model += pulp.LpConstraint(pulp.LpAffineExpression({P_charge[t]: 1.0}), sense=1, rhs=0.0)
+            model += pulp.LpConstraint(pulp.LpAffineExpression({P_charge[t]: 1.0}), sense=-1, rhs=bp)
+            
+            model += pulp.LpConstraint(pulp.LpAffineExpression({P_discharge[t]: 1.0}), sense=1, rhs=0.0)
+            model += pulp.LpConstraint(pulp.LpAffineExpression({P_discharge[t]: 1.0}), sense=-1, rhs=bp)
+            
+            model += pulp.LpConstraint(pulp.LpAffineExpression({R_afrr[t]: 1.0}), sense=1, rhs=0.0)
+            model += pulp.LpConstraint(pulp.LpAffineExpression({R_afrr[t]: 1.0}), sense=-1, rhs=bp)
+            
+            model += pulp.LpConstraint(pulp.LpAffineExpression({SOC[t]: 1.0}), sense=1, rhs=0.5)
+            model += pulp.LpConstraint(pulp.LpAffineExpression({SOC[t]: 1.0}), sense=-1, rhs=be)
+
+            # Operational constraints
+            model += pulp.LpConstraint(pulp.LpAffineExpression({P_charge[t]: 1.0, R_afrr[t]: 1.0}), sense=-1, rhs=bp)
+            model += pulp.LpConstraint(pulp.LpAffineExpression({P_discharge[t]: 1.0, R_afrr[t]: 1.0}), sense=-1, rhs=bp)
             
             if t > 0:
                 # SOC[t] - SOC[t-1] - eta * P_charge[t] + (1/eta) * P_discharge[t] == 0
@@ -119,12 +92,13 @@ if st.sidebar.button("Run Multi-Market Optimization"):
                     pulp.LpAffineExpression({
                         SOC[t]: 1.0,
                         SOC[t-1]: -1.0,
-                        P_charge[t]: -float(eta),
-                        P_discharge[t]: 1.0 / float(eta)
+                        P_charge[t]: -eta_f,
+                        P_discharge[t]: 1.0 / eta_f
                     }), 
                     sense=0, rhs=0.0
                 )
 
+        # Solve
         model.solve(pulp.PULP_CBC_CMD(msg=False))
 
         results = []
@@ -134,19 +108,27 @@ if st.sidebar.button("Run Multi-Market Optimization"):
                 'da_price_eur': float(da_prices[t]),
                 'afrr_price_eur': float(afrr_prices[t]),
                 'solar_mw': float(solar_profile[t]),
-                'charge_mw': pulp.value(P_charge[t]),
-                'discharge_mw': pulp.value(P_discharge[t]),
-                'afrr_mw': pulp.value(R_afrr[t]),
-                'soc_mwh': pulp.value(SOC[t])
+                'charge_mw': P_charge[t].varValue or 0.0,
+                'discharge_mw': P_discharge[t].varValue or 0.0,
+                'afrr_mw': R_afrr[t].varValue or 0.0,
+                'soc_mwh': SOC[t].varValue or 0.0
             })
 
         df_opt = pd.DataFrame(results)
-        total_rev = pulp.value(model.objective)
+        
+        # Calculate optimal revenue dynamically to avoid value extraction bugs
+        total_rev = sum(
+            (float(da_prices[t]) - 1.2) * (P_discharge[t].varValue or 0.0) +
+            (-float(da_prices[t]) - 1.2) * (P_charge[t].varValue or 0.0) +
+            (float(afrr_prices[t]) - 1.2) * (R_afrr[t].varValue or 0.0) +
+            (float(solar_profile[t]) * float(da_prices[t]))
+            for t in T
+        )
 
         col1, col2, col3 = st.columns(3)
         col1.metric("Optimization Status", pulp.LpStatus[model.status])
         col2.metric("Total Optimal Revenue", f"€{total_rev:,.2f}")
-        col3.metric("Peak aFRR Reserve", f"{max([pulp.value(R_afrr[t]) for t in T]):.2f} MW")
+        col3.metric("Peak aFRR Reserve", f"{max([R_afrr[t].varValue or 0.0 for t in T]):.2f} MW")
 
         st.subheader("📊 Optimized Multi-Market Dispatch Profile")
         fig, ax = plt.subplots(figsize=(10, 4))
