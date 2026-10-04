@@ -45,7 +45,7 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         be = float(bess_energy)
         init_s = float(initial_soc)
 
-        # 100% Robust variable generation across all PuLP versions
+        # Variable generation
         P_charge = {}
         P_discharge = {}
         R_afrr = {}
@@ -61,15 +61,16 @@ if st.sidebar.button("Run Multi-Market Optimization"):
             u_charge[t] = pulp.LpVariable(f"u_charge_{t}")
             u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}")
 
-        revenue_da = pulp.lpSum([(solar_profile[t] + P_discharge[t] - P_charge[t]) * da_prices[t] for t in T])
-        revenue_afrr = pulp.lpSum([R_afrr[t] * afrr_prices[t] for t in T])
+        # Objective functions with explicit float casting to prevent Rust core type errors
+        revenue_da = pulp.lpSum([(float(solar_profile[t]) + P_discharge[t] - P_charge[t]) * float(da_prices[t]) for t in T])
+        revenue_afrr = pulp.lpSum([R_afrr[t] * float(afrr_prices[t]) for t in T])
         degradation_cost = pulp.lpSum([(P_charge[t] + P_discharge[t] + R_afrr[t]) * 1.2 for t in T])
 
         model += revenue_da + revenue_afrr - degradation_cost
         model += SOC[0] == init_s
 
         for t in T:
-            # Explicit bounds and constraints (including binary constraints for u_charge and u_discharge)
+            # Explicit bounds and constraints
             model += P_charge[t] >= 0.0
             model += P_charge[t] <= bp
             model += P_discharge[t] >= 0.0
@@ -79,7 +80,7 @@ if st.sidebar.button("Run Multi-Market Optimization"):
             model += SOC[t] >= 0.5
             model += SOC[t] <= be
 
-            # Binary enforcement constraints (u >= 0, u <= 1 and integer/binary logic)
+            # Binary constraints
             model += u_charge[t] >= 0
             model += u_charge[t] <= 1
             model += u_discharge[t] >= 0
@@ -92,7 +93,7 @@ if st.sidebar.button("Run Multi-Market Optimization"):
             model += P_discharge[t] + R_afrr[t] <= bp
             
             if t > 0:
-                model += SOC[t] == SOC[t-1] + (eta * P_charge[t] - (1.0 / eta) * P_discharge[t])
+                model += SOC[t] == SOC[t-1] + (float(eta) * P_charge[t] - (1.0 / float(eta)) * P_discharge[t])
 
         model.solve(pulp.PULP_CBC_CMD(msg=False))
 
@@ -100,9 +101,9 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         for t in T:
             results.append({
                 'hour': t,
-                'da_price_eur': da_prices[t],
-                'afrr_price_eur': afrr_prices[t],
-                'solar_mw': solar_profile[t],
+                'da_price_eur': float(da_prices[t]),
+                'afrr_price_eur': float(afrr_prices[t]),
+                'solar_mw': float(solar_profile[t]),
                 'charge_mw': pulp.value(P_charge[t]),
                 'discharge_mw': pulp.value(P_discharge[t]),
                 'afrr_mw': pulp.value(R_afrr[t]),
