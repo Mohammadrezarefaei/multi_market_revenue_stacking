@@ -39,10 +39,11 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         be = float(bess_energy)
         init_s = float(initial_soc)
 
-        P_charge = {t: pulp.LpVariable(f"P_charge_{t}", 0.0, bp, 'Continuous') for t in T}
-        P_discharge = {t: pulp.LpVariable(f"P_discharge_{t}", 0.0, bp, 'Continuous') for t in T}
-        R_afrr = {t: pulp.LpVariable(f"R_afrr_{t}", 0.0, bp, 'Continuous') for t in T}
-        SOC = {t: pulp.LpVariable(f"SOC_{t}", 0.5, be, 'Continuous') for t in T}
+        # Fixed LpVariable definitions with explicit arguments
+        P_charge = {t: pulp.LpVariable(f"P_charge_{t}", lowBound=0.0, upBound=bp, cat='Continuous') for t in T}
+        P_discharge = {t: pulp.LpVariable(f"P_discharge_{t}", lowBound=0.0, upBound=bp, cat='Continuous') for t in T}
+        R_afrr = {t: pulp.LpVariable(f"R_afrr_{t}", lowBound=0.0, upBound=bp, cat='Continuous') for t in T}
+        SOC = {t: pulp.LpVariable(f"SOC_{t}", lowBound=0.5, upBound=be, cat='Continuous') for t in T}
         u_charge = {t: pulp.LpVariable(f"u_charge_{t}", cat='Binary') for t in T}
         u_discharge = {t: pulp.LpVariable(f"u_discharge_{t}", cat='Binary') for t in T}
 
