@@ -2,6 +2,11 @@ import unittest
 import pandas as pd
 import sqlite3
 import os
+import sys
+
+# Add project root to sys.path to allow absolute imports from database package
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from database.multi_market_db_logger import MultiMarketBESSDB
 
 class TestMultiMarketDB(unittest.TestCase):
