@@ -45,7 +45,7 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         be = float(bess_energy)
         init_s = float(initial_soc)
 
-        # 100% Robust variable generation across all PuLP versions (using positional arguments for binary)
+        # 100% Compatible variable generation with this specific PuLP build
         P_charge = {}
         P_discharge = {}
         R_afrr = {}
@@ -58,9 +58,9 @@ if st.sidebar.button("Run Multi-Market Optimization"):
             P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}")
             R_afrr[t] = pulp.LpVariable(f"R_afrr_{t}")
             SOC[t] = pulp.LpVariable(f"SOC_{t}")
-            # Binary variables using positional arguments (name, lowBound, upBound, cat)
-            u_charge[t] = pulp.LpVariable(f"u_charge_{t}", 0, 1, 'Binary')
-            u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}", 0, 1, 'Binary')
+            # Binary variables using 2 positional arguments: name and category
+            u_charge[t] = pulp.LpVariable(f"u_charge_{t}", 'Binary')
+            u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}", 'Binary')
 
         revenue_da = pulp.lpSum([(solar_profile[t] + P_discharge[t] - P_charge[t]) * da_prices[t] for t in T])
         revenue_afrr = pulp.lpSum([R_afrr[t] * afrr_prices[t] for t in T])
