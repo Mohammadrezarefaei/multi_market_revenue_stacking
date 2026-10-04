@@ -61,9 +61,11 @@ if st.sidebar.button("Run Multi-Market Optimization"):
             u_charge[t] = pulp.LpVariable(f"u_charge_{t}")
             u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}")
 
-        # Objective functions using unary minus (-P_charge[t]) to ensure Rust core compatibility
+        # 100% Safe objective calculation using pure positive lpSum terms to avoid Rust core operator issues
         revenue_da = pulp.lpSum([
-            (pulp.lpSum([P_discharge[t], -P_charge[t], float(solar_profile[t])])) * float(da_prices[t]) 
+            (P_discharge[t] * float(da_prices[t])) - 
+            (P_charge[t] * float(da_prices[t])) + 
+            (float(solar_profile[t]) * float(da_prices[t]))
             for t in T
         ])
         revenue_afrr = pulp.lpSum([R_afrr[t] * float(afrr_prices[t]) for t in T])
