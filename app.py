@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pulp
 import matplotlib.pyplot as plt
 import os
 
@@ -13,6 +12,13 @@ st.set_page_config(
 
 st.title("🔋 Multi-Market Revenue Stacking Engine (Day-Ahead & aFRR)")
 st.markdown("Advanced MILP optimization dashboard for co-optimized battery energy storage dispatch across energy and reserve markets.")
+
+# Safely import pulp with a clear error message if missing
+try:
+    import pulp
+except ImportError:
+    st.error("❌ The `pulp` optimization library is not installed. Please ensure `pulp` is listed in your `requirements.txt` file.")
+    st.stop()
 
 # Sidebar Controls
 st.sidebar.header("Asset & Market Parameters")
@@ -39,7 +45,7 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         be = float(bess_energy)
         init_s = float(initial_soc)
 
-        # Fixed LpVariable definitions with explicit arguments
+        # Explicit LpVariable definitions
         P_charge = {t: pulp.LpVariable(f"P_charge_{t}", lowBound=0.0, upBound=bp, cat='Continuous') for t in T}
         P_discharge = {t: pulp.LpVariable(f"P_discharge_{t}", lowBound=0.0, upBound=bp, cat='Continuous') for t in T}
         R_afrr = {t: pulp.LpVariable(f"R_afrr_{t}", lowBound=0.0, upBound=bp, cat='Continuous') for t in T}
