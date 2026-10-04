@@ -61,15 +61,15 @@ if st.sidebar.button("Run Multi-Market Optimization"):
             u_charge[t] = pulp.LpVariable(f"u_charge_{t}")
             u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}")
 
-        # 100% Safe objective calculation using pure positive lpSum terms to avoid Rust core operator issues
+        # 100% Safe objective calculation with scalar on the LEFT side of multiplication (`float * variable`)
         revenue_da = pulp.lpSum([
-            (P_discharge[t] * float(da_prices[t])) - 
-            (P_charge[t] * float(da_prices[t])) + 
-            (float(solar_profile[t]) * float(da_prices[t]))
+            (float(da_prices[t]) * P_discharge[t]) - 
+            (float(da_prices[t]) * P_charge[t]) + 
+            (float(da_prices[t]) * float(solar_profile[t]))
             for t in T
         ])
-        revenue_afrr = pulp.lpSum([R_afrr[t] * float(afrr_prices[t]) for t in T])
-        degradation_cost = pulp.lpSum([(P_charge[t] + P_discharge[t] + R_afrr[t]) * 1.2 for t in T])
+        revenue_afrr = pulp.lpSum([float(afrr_prices[t]) * R_afrr[t] for t in T])
+        degradation_cost = pulp.lpSum([1.2 * P_charge[t] + 1.2 * P_discharge[t] + 1.2 * R_afrr[t] for t in T])
 
         model += revenue_da + revenue_afrr - degradation_cost
         model += SOC[0] == init_s
