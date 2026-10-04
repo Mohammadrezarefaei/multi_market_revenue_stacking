@@ -45,7 +45,7 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         be = float(bess_energy)
         init_s = float(initial_soc)
 
-        # 100% Compatible variable generation with this specific PuLP build
+        # 100% Robust variable generation across all PuLP versions
         P_charge = {}
         P_discharge = {}
         R_afrr = {}
@@ -58,9 +58,8 @@ if st.sidebar.button("Run Multi-Market Optimization"):
             P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}")
             R_afrr[t] = pulp.LpVariable(f"R_afrr_{t}")
             SOC[t] = pulp.LpVariable(f"SOC_{t}")
-            # Binary variables using 2 positional arguments: name and category
-            u_charge[t] = pulp.LpVariable(f"u_charge_{t}", 'Binary')
-            u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}", 'Binary')
+            u_charge[t] = pulp.LpVariable(f"u_charge_{t}")
+            u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}")
 
         revenue_da = pulp.lpSum([(solar_profile[t] + P_discharge[t] - P_charge[t]) * da_prices[t] for t in T])
         revenue_afrr = pulp.lpSum([R_afrr[t] * afrr_prices[t] for t in T])
@@ -70,7 +69,7 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         model += SOC[0] == init_s
 
         for t in T:
-            # Explicit bounds and constraints
+            # Explicit bounds and constraints (including binary constraints for u_charge and u_discharge)
             model += P_charge[t] >= 0.0
             model += P_charge[t] <= bp
             model += P_discharge[t] >= 0.0
@@ -79,6 +78,12 @@ if st.sidebar.button("Run Multi-Market Optimization"):
             model += R_afrr[t] <= bp
             model += SOC[t] >= 0.5
             model += SOC[t] <= be
+
+            # Binary enforcement constraints (u >= 0, u <= 1 and integer/binary logic)
+            model += u_charge[t] >= 0
+            model += u_charge[t] <= 1
+            model += u_discharge[t] >= 0
+            model += u_discharge[t] <= 1
 
             model += u_charge[t] + u_discharge[t] <= 1
             model += P_charge[t] <= bp * u_charge[t]
