@@ -45,13 +45,21 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         be = float(bess_energy)
         init_s = float(initial_soc)
 
-        # Using official pulp.LpVariable.dicts for robust variable generation
-        P_charge = pulp.LpVariable.dicts("P_charge", T, lowBound=0.0, upBound=bp, cat=pulp.LpContinuous)
-        P_discharge = pulp.LpVariable.dicts("P_discharge", T, lowBound=0.0, upBound=bp, cat=pulp.LpContinuous)
-        R_afrr = pulp.LpVariable.dicts("R_afrr", T, lowBound=0.0, upBound=bp, cat=pulp.LpContinuous)
-        SOC = pulp.LpVariable.dicts("SOC", T, lowBound=0.5, upBound=be, cat=pulp.LpContinuous)
-        u_charge = pulp.LpVariable.dicts("u_charge", T, cat=pulp.LpBinary)
-        u_discharge = pulp.LpVariable.dicts("u_discharge", T, cat=pulp.LpBinary)
+        # 100% Robust variable generation using standard Python loops & pulp.LpVariable
+        P_charge = {}
+        P_discharge = {}
+        R_afrr = {}
+        SOC = {}
+        u_charge = {}
+        u_discharge = {}
+
+        for t in T:
+            P_charge[t] = pulp.LpVariable(f"P_charge_{t}", 0.0, bp, pulp.LpContinuous)
+            P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}", 0.0, bp, pulp.LpContinuous)
+            R_afrr[t] = pulp.LpVariable(f"R_afrr_{t}", 0.0, bp, pulp.LpContinuous)
+            SOC[t] = pulp.LpVariable(f"SOC_{t}", 0.5, be, pulp.LpContinuous)
+            u_charge[t] = pulp.LpVariable(f"u_charge_{t}", cat=pulp.LpBinary)
+            u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}", cat=pulp.LpBinary)
 
         revenue_da = pulp.lpSum([(solar_profile[t] + P_discharge[t] - P_charge[t]) * da_prices[t] for t in T])
         revenue_afrr = pulp.lpSum([R_afrr[t] * afrr_prices[t] for t in T])
