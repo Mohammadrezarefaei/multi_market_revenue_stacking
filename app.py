@@ -45,60 +45,85 @@ if st.sidebar.button("Run Multi-Market Optimization"):
         be = float(bess_energy)
         init_s = float(initial_soc)
 
-        # Variable generation
-        P_charge = {}
-        P_discharge = {}
-        R_afrr = {}
-        SOC = {}
-        u_charge = {}
-        u_discharge = {}
+        # 1. Safest Variable Generation (bypassing all constructor limits, setting attributes directly)
+        P_charge, P_discharge, R_afrr, SOC, u_charge, u_discharge = {}, {}, {}, {}, {}, {}
 
         for t in T:
             P_charge[t] = pulp.LpVariable(f"P_charge_{t}")
+            P_charge[t].lowBound, P_charge[t].upBound = 0.0, bp
+            
             P_discharge[t] = pulp.LpVariable(f"P_discharge_{t}")
+            P_discharge[t].lowBound, P_discharge[t].upBound = 0.0, bp
+            
             R_afrr[t] = pulp.LpVariable(f"R_afrr_{t}")
+            R_afrr[t].lowBound, R_afrr[t].upBound = 0.0, bp
+            
             SOC[t] = pulp.LpVariable(f"SOC_{t}")
+            SOC[t].lowBound, SOC[t].upBound = 0.5, be
+            
             u_charge[t] = pulp.LpVariable(f"u_charge_{t}")
+            u_charge[t].cat = pulp.LpBinary
+            u_charge[t].lowBound, u_charge[t].upBound = 0.0, 1.0
+            
             u_discharge[t] = pulp.LpVariable(f"u_discharge_{t}")
+            u_discharge[t].cat = pulp.LpBinary
+            u_discharge[t].lowBound, u_discharge[t].upBound = 0.0, 1.0
 
-        # 100% Safe objective calculation with scalar on the LEFT side of multiplication (`float * variable`)
-        revenue_da = pulp.lpSum([
-            (float(da_prices[t]) * P_discharge[t]) - 
-            (float(da_prices[t]) * P_charge[t]) + 
-            (float(da_prices[t]) * float(solar_profile[t]))
-            for t in T
-        ])
-        revenue_afrr = pulp.lpSum([float(afrr_prices[t]) * R_afrr[t] for t in T])
-        degradation_cost = pulp.lpSum([1.2 * P_charge[t] + 1.2 * P_discharge[t] + 1.2 * R_afrr[t] for t in T])
+        # 2. Objective Function via Low-Level API (Bypassing __add__, __mul__, __sub__)
+        obj_dict = {}
+        for t in T:
+            # P_discharge * da_price - P_charge * da_price + R_afrr * afrr_price - 1.2 * (P_charge + P_discharge + R_afrr)
+            obj_dict[P_discharge[t]] = float(da_prices[t]) - 1.2
+            obj_dict[P_charge[t]] = -float(da_prices[t]) - 1.2
+            obj_dict[R_afrr[t]] = float(afrr_prices[t]) - 1.2
+            
+        constant_term = sum(float(solar_profile[t]) * float(da_prices[t]) for t in T)
+        
+        # Build affine expression directly from dictionary mapping
+        model += pulp.LpAffineExpression(obj_dict, constant=constant_term)
 
-        model += revenue_da + revenue_afrr - degradation_cost
-        model += SOC[0] == init_s
+        # 3. Constraints via Low-Level API (Bypassing <=, >=, == operators)
+        # sense=0 is EQ (==), sense=-1 is LE (<=)
+        model += pulp.LpConstraint(pulp.LpAffineExpression({SOC[0]: 1.0}), sense=0, rhs=init_s)
 
         for t in T:
-            # Explicit bounds and constraints
-            model += P_charge[t] >= 0.0
-            model += P_charge[t] <= bp
-            model += P_discharge[t] >= 0.0
-            model += P_discharge[t] <= bp
-            model += R_afrr[t] >= 0.0
-            model += R_afrr[t] <= bp
-            model += SOC[t] >= 0.5
-            model += SOC[t] <= be
-
-            # Binary constraints
-            model += u_charge[t] >= 0
-            model += u_charge[t] <= 1
-            model += u_discharge[t] >= 0
-            model += u_discharge[t] <= 1
-
-            model += u_charge[t] + u_discharge[t] <= 1
-            model += P_charge[t] <= bp * u_charge[t]
-            model += P_discharge[t] <= bp * u_discharge[t]
-            model += P_charge[t] + R_afrr[t] <= bp
-            model += P_discharge[t] + R_afrr[t] <= bp
+            # P_charge[t] - bp * u_charge[t] <= 0
+            model += pulp.LpConstraint(
+                pulp.LpAffineExpression({P_charge[t]: 1.0, u_charge[t]: -bp}), 
+                sense=-1, rhs=0.0
+            )
+            # P_discharge[t] - bp * u_discharge[t] <= 0
+            model += pulp.LpConstraint(
+                pulp.LpAffineExpression({P_discharge[t]: 1.0, u_discharge[t]: -bp}), 
+                sense=-1, rhs=0.0
+            )
+            # P_charge[t] + R_afrr[t] <= bp
+            model += pulp.LpConstraint(
+                pulp.LpAffineExpression({P_charge[t]: 1.0, R_afrr[t]: 1.0}), 
+                sense=-1, rhs=bp
+            )
+            # P_discharge[t] + R_afrr[t] <= bp
+            model += pulp.LpConstraint(
+                pulp.LpAffineExpression({P_discharge[t]: 1.0, R_afrr[t]: 1.0}), 
+                sense=-1, rhs=bp
+            )
+            # u_charge[t] + u_discharge[t] <= 1
+            model += pulp.LpConstraint(
+                pulp.LpAffineExpression({u_charge[t]: 1.0, u_discharge[t]: 1.0}), 
+                sense=-1, rhs=1.0
+            )
             
             if t > 0:
-                model += SOC[t] == SOC[t-1] + (float(eta) * P_charge[t] - (1.0 / float(eta)) * P_discharge[t])
+                # SOC[t] - SOC[t-1] - eta * P_charge[t] + (1/eta) * P_discharge[t] == 0
+                model += pulp.LpConstraint(
+                    pulp.LpAffineExpression({
+                        SOC[t]: 1.0,
+                        SOC[t-1]: -1.0,
+                        P_charge[t]: -float(eta),
+                        P_discharge[t]: 1.0 / float(eta)
+                    }), 
+                    sense=0, rhs=0.0
+                )
 
         model.solve(pulp.PULP_CBC_CMD(msg=False))
 
